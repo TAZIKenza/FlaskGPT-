@@ -1,0 +1,7 @@
+La gouvernance des données est l'ensemble des politiques, rôles et processus qui garantissent que les données sont fiables, sécurisées et utilisées de façon conforme.
+
+Le data owner est responsable d'un jeu de données : il décide de qui peut y accéder et valide sa qualité. Le data steward applique au quotidien les règles de qualité et documente les données.
+
+Les six dimensions classiques de la qualité des données sont la complétude, l'unicité, la validité, la cohérence, l'exactitude et l'actualité.
+
+La loi marocaine 09-08 protège les données à caractère personnel et impose une déclaration auprès de la CNDP avant tout traitement de ces données.

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FlaskGPT — Assistant IA</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='dist/css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/styles/default.min.css">
+
+    <script defer src="https://cdn.jsdelivr.net/npm/showdown@2.1.0/dist/showdown.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/highlight.min.js"></script>
+    <script defer src="{{ url_for('static', filename='dist/js/script.js') }}"></script>
+</head>
+
+<body class="bg-slate-50 text-slate-800">
+<div class="mx-auto flex min-h-screen max-w-7xl gap-6 px-4 py-6">
+
+    <!-- Historique des conversations (stockées dans SQLite) -->
+    <aside class="hidden w-64 shrink-0 md:block">
+        <div class="sticky top-6">
+            <h1 class="text-2xl font-bold tracking-tight">FlaskGPT</h1>
+            <p class="mb-4 mt-1 text-sm text-slate-500">Your intelligent assistant.</p>
+            <h2 class="mb-2 text-xs font-semibold uppercase text-slate-400">Historique</h2>
+            <ul id="conversation-list" class="space-y-1"></ul>
+        </div>
+    </aside>
+
+    <main class="flex min-w-0 flex-1 flex-col">
+        <!-- Barre d'outils -->
+        <header class="mb-4 flex flex-wrap items-center gap-2 text-sm">
+            <h1 class="mr-2 text-xl font-bold md:hidden">FlaskGPT</h1>
+            <label for="domain" class="sr-only">Domaine</label>
+            <select id="domain" class="rounded-lg border border-slate-300 bg-white px-3 py-2">
+                {% for key, d in domains.items() %}
+                <option value="{{ key }}">{{ d.label }}</option>
+                {% endfor %}
+            </select>
+            <button id="btn-new" class="rounded-lg bg-indigo-600 px-3 py-2 font-medium text-white hover:bg-indigo-700">+ Nouvelle conversation</button>
+            <button id="btn-delete" class="rounded-lg border border-red-300 bg-white px-3 py-2 text-red-700 hover:bg-red-50">Effacer</button>
+            <span class="mx-1 hidden h-6 border-l border-slate-300 sm:inline-block"></span>
+            <select id="export-format" class="rounded-lg border border-slate-300 bg-white px-3 py-2" aria-label="Format d'export">
+                <option value="txt">TXT</option>
+                <option value="json">JSON</option>
+                <option value="pdf">PDF</option>
+            </select>
+            <button id="btn-export" class="rounded-lg border border-slate-300 bg-white px-3 py-2 hover:bg-slate-100">Exporter</button>
+            <button id="btn-summary" class="rounded-lg border border-slate-300 bg-white px-3 py-2 hover:bg-slate-100">Résumé PDF</button>
+            <span class="mx-1 hidden h-6 border-l border-slate-300 sm:inline-block"></span>
+            <button data-panel="sources" class="panel-btn rounded-lg border border-slate-300 bg-white px-3 py-2 hover:bg-slate-100">Sources</button>
+            <button data-panel="data" class="panel-btn rounded-lg border border-slate-300 bg-white px-3 py-2 hover:bg-slate-100">Qualité des données</button>
+            <button data-panel="stats" class="panel-btn rounded-lg border border-slate-300 bg-white px-3 py-2 hover:bg-slate-100">Performances</button>
+        </header>
+
+        <!-- Bandeau d'erreur (fonctionnalité 4) -->
+        <div id="error-banner" role="alert" class="mb-4 hidden items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <span id="error-text"></span>
+            <button id="error-close" class="font-bold" aria-label="Fermer">✕</button>
+        </div>
+
+        <!-- Panneau : sources et références (fonctionnalité 10) -->
+        <section id="panel-sources" class="panel mb-4 hidden rounded-2xl border border-slate-200 bg-white p-5 text-sm">
+            <h2 class="mb-1 font-semibold">Sources et références</h2>
+            <p class="mb-3 text-slate-500">Importe des documents (.txt, .md, .csv, .json, .pdf), coche ceux à consulter : l'assistant s'appuie dessus et cite [S1.1], [S2.1]…</p>
+            <input id="source-file" type="file" accept=".txt,.md,.csv,.json,.pdf" class="mb-3 block text-sm">
+            <ul id="source-list" class="mb-3 space-y-1"></ul>
+            <div class="flex flex-wrap gap-4">
+                <label class="flex items-center gap-2">Extraits par source
+                    <select id="opt-excerpts" class="rounded-lg border border-slate-300 px-2 py-1">
+                        <option>1</option><option selected>2</option><option>3</option><option>5</option>
+                    </select>
+                </label>
+                <label class="flex items-center gap-2">Lignes par extrait
+                    <select id="opt-lines" class="rounded-lg border border-slate-300 px-2 py-1">
+                        <option value="3">3</option><option value="6" selected>6</option>
+                        <option value="10">10</option><option value="0">tout</option>
+                    </select>
+                </label>
+            </div>
+        </section>
+
+        <!-- Panneau : qualité et gouvernance des données (fonctionnalité 7) -->
+        <section id="panel-data" class="panel mb-4 hidden rounded-2xl border border-slate-200 bg-white p-5 text-sm">
+            <h2 class="mb-1 font-semibold">Analyse et gouvernance des données</h2>
+            <p class="mb-3 text-slate-500">Importe un fichier .csv, .xlsx ou .json : valeurs manquantes, doublons, incohérences, anomalies et score de qualité.</p>
+            <div class="mb-4 flex flex-wrap items-center gap-2">
+                <input id="data-file" type="file" accept=".csv,.xlsx,.json,.tsv" class="text-sm">
+                <button id="btn-analyze" class="rounded-lg bg-indigo-600 px-3 py-2 font-medium text-white hover:bg-indigo-700">Analyser</button>
+            </div>
+            <div id="report"></div>
+        </section>
+
+        <!-- Panneau : performances (fonctionnalité 8) -->
+        <section id="panel-stats" class="panel mb-4 hidden rounded-2xl border border-slate-200 bg-white p-5 text-sm">
+            <h2 class="mb-3 font-semibold">Évaluation des performances</h2>
+            <div id="stats-content"></div>
+        </section>
+
+        <!-- Modèle d'un message (cloné par script.js) -->
+        <template id="message-template">
+            <article class="message-block mb-4 rounded-2xl border border-l-4 border-slate-200 border-l-slate-200 bg-white p-5 shadow-xs">
+                <div class="role mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400"></div>
+                <div class="message chat-content leading-relaxed break-words"></div>
+                <div class="extras mt-4 hidden space-y-3 border-t border-slate-100 pt-3">
+                    <div class="metrics text-xs text-slate-500"></div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-xs text-slate-500">Noter :</span>
+                        <span class="stars flex"></span>
+                        <span class="rating-chip hidden rounded-full px-2 py-0.5 text-xs font-medium"></span>
+                    </div>
+                    <details class="sources hidden text-sm">
+                        <summary class="cursor-pointer font-medium text-indigo-700"></summary>
+                        <div class="sources-list mt-2 space-y-2"></div>
+                    </details>
+                </div>
+            </article>
+        </template>
+
+        <div id="gpt-output" class="flex-1" aria-live="polite"></div>
+
+        <form id="prompt-form" class="sticky bottom-0 mt-6 flex gap-3 bg-slate-50 py-4">
+            <label for="prompt" class="sr-only">Your message</label>
+            <textarea id="prompt" name="prompt" rows="2" required
+                      placeholder="Ask your question… (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)"
+                      class="min-w-0 flex-1 resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"></textarea>
+            <button type="submit"
+                    class="rounded-xl bg-indigo-600 px-5 py-3 font-medium text-white hover:bg-indigo-700 disabled:cursor-wait disabled:opacity-50">
+                Send
+            </button>
+        </form>
+    </main>
+</div>
+</body>
+</html>
